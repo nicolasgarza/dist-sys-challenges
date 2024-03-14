@@ -1,4 +1,4 @@
-package broadcast
+package main
 
 import (
 	"encoding/json"
@@ -26,7 +26,7 @@ func main() {
 			return fmt.Errorf("message is not an integer")
 		}
 
-		body["type"] = "generate_ok"
+		body["type"] = "broadcast_ok"
 		delete(body, "message")
 		return n.Reply(msg, body)
 	})
