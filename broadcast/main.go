@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
+	"os"
 
 	maelstrom "github.com/jepsen-io/maelstrom/demo/go"
 )
@@ -12,8 +12,15 @@ func main() {
 	n := maelstrom.NewNode()
 	var recieved_ints []int
 	var this_topology map[string][]string
+	logfile, err := os.OpenFile("/Users/nicolasgarza/code/dist-sys-challenges/broadcast/debug.log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0666)
+	if err != nil {
+		log.Fatal("failed to open log file", err)
+	}
+	defer logfile.Close()
+	log.SetOutput(logfile)
 
 	n.Handle("broadcast", func(msg maelstrom.Message) error {
+		log.Println("In function broadcast")
 
 		var body map[string]any
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -24,7 +31,7 @@ func main() {
 			this_int := int(recieved_int)
 			recieved_ints = append(recieved_ints, this_int)
 		} else {
-			return fmt.Errorf("message is not an integer")
+			log.Println("message is not an integer")
 		}
 
 		send_data := map[string]any{
@@ -36,7 +43,6 @@ func main() {
 			return err
 		}
 
-		// fmt.Printf("this_topology: %v, this id: %s", this_topology, n.ID())
 		this_node := n.ID()
 		runeSlice := []rune(this_node)
 		var firstTwo string
@@ -44,12 +50,11 @@ func main() {
 			firstTwo = string(runeSlice[:2])
 		}
 
-		// fmt.Printf("This node's neighbors: %s", this_topology[firstTwo])
 		for _, node_name := range this_topology[firstTwo] {
-			err := n.Send(node_name, json_data)
-			if err != nil {
-				return err
+			if node_name == firstTwo {
+				continue
 			}
+			n.RPC(node_name, json_data, func(_ maelstrom.Message) error { return nil })
 		}
 
 		body["type"] = "broadcast_ok"
@@ -65,6 +70,7 @@ func main() {
 	})
 
 	n.Handle("read", func(msg maelstrom.Message) error {
+		log.Println("In function read")
 
 		var body map[string]any
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
@@ -78,15 +84,25 @@ func main() {
 	})
 
 	n.Handle("topology", func(msg maelstrom.Message) error {
-		var body map[string]any
+		log.Println("In function topology")
+
+		var body map[string]interface{}
 
 		if err := json.Unmarshal(msg.Body, &body); err != nil {
 			return err
 		}
+		log.Println("--------------------------")
+		log.Println(body)
+		log.Println("--------------------------")
 
-		topologyData, ok := body["topology"].(map[string]interface{})
+		topologyInterface, exists := body["topology"]
+		if !exists {
+			log.Println("topology key does not exist in the message")
+		}
+
+		topologyData, ok := topologyInterface.(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("incorrect format for topology")
+			log.Println("incorrect format for topology")
 		}
 
 		convertedTopology := make(map[string][]string)
@@ -97,12 +113,12 @@ func main() {
 					if nodeName, ok := node.(string); ok {
 						stringSlice = append(stringSlice, nodeName)
 					} else {
-						return fmt.Errorf("node name is not a string")
+						log.Println("node name is not a string")
 					}
 				}
 				convertedTopology[key] = stringSlice
 			} else {
-				return fmt.Errorf("nodes are not a slice")
+				log.Println("nodes are not a slice")
 			}
 		}
 
